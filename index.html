@@ -29,12 +29,10 @@
 </head>
 <body>
 
-    <!-- USER VIEW: HIDDEN GATE -->
     <div id="user-view" class="card">
         <h2>Preparing Your File...</h2>
         <div id="status-msg" class="status-box">Checking browser security environment...</div>
         
-        <!-- Captcha hidden behind validation check -->
         <div class="cf-wrapper" id="turnstile-container"></div>
         
         <div id="action-area" class="hidden">
@@ -43,7 +41,6 @@
         </div>
     </div>
 
-    <!-- ADVANCED ADMIN VIEW -->
     <div id="admin-view" class="card hidden" style="max-width: 750px;">
         <h2>Advanced Link Dashboard</h2>
         <p>Manage, generate, edit, and revoke your protected file links.</p>
@@ -79,10 +76,10 @@
         const ADMIN_PASSWORD = "wtfnxfx"; 
         const GPLINKS_API_KEY = "cc346941b13df1daa7da298d55231228fa92b359";   
         const BOT_USERNAME = "Atoz_12_FileStore_Bot";   
-        const SITE_KEY = "0x4AAAAAAFZbC01RvFSGeu7w"; 
+        const SITE_KEY = "0x4AAAAAAZbc01RvFSGeu7w"; 
 
         window.addEventListener('DOMContentLoaded', () => {
-            if (window.location.hash === '#admin' || window.location.pathname.includes('admin')) {
+            if (window.location.hash.includes('admin') || window.location.pathname.includes('admin')) {
                 document.getElementById('user-view').classList.add('hidden');
                 document.getElementById('admin-view').classList.remove('hidden');
             } else {
@@ -90,27 +87,24 @@
             }
         });
 
-        // Anti-Bypasser Flow: Obfuscate parameters and enforce solve state
         function initUserFlow() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const token = urlParams.get('token');
+            // Read token from hidden hash fragment (#token=XYZ) instead of query parameters
+            const hashVal = window.location.hash.substring(1); // remove #
+            const params = new URLSearchParams(hashVal);
+            const token = params.get('token');
 
             if (!token) {
-                document.getElementById('status-msg.innerHTML') = "Error: Invalid access route.";
+                document.getElementById('status-msg').innerHTML = "Error: Invalid or missing secure token.";
                 return;
             }
 
-            // Store encrypted/tokenized target securely in session storage so scrapers cant read it from DOM
             sessionStorage.setItem('secure_target', token);
+            window.location.hash = ''; // Clear hash from browser bar instantly
 
-            // Change URL cleanly so payload is completely gone from browser address bar
-            window.history.replaceState({}, document.title, window.location.pathname);
-
-            // Delay rendering captcha slightly to trick basic scrapers
             setTimeout(() => {
                 document.getElementById('status-msg').innerText = "Please complete the human check below:";
                 renderTurnstile();
-            }, 1000);
+            }, 800);
         }
 
         function renderTurnstile() {
@@ -128,12 +122,8 @@
         }
 
         function verifySolvedState(cfToken) {
-            if (!cfToken) {
-                alert("Verification failed.");
-                return;
-            }
+            if (!cfToken) return;
 
-            // Challenge successfully solved by human browser
             document.getElementById('turnstile-container').classList.add('hidden');
             document.getElementById('status-msg').classList.add('hidden');
             document.getElementById('action-area').classList.remove('hidden');
@@ -143,8 +133,6 @@
             
             const btn = document.getElementById('tg-btn');
             btn.href = tgDeepLink;
-            
-            // Auto trigger app
             window.location.href = tgDeepLink;
         }
 
@@ -186,8 +174,8 @@
             }
 
             const currentDomain = window.location.origin;
-            // The URL passed to GPLink now uses a clean hidden token parameter name
-            const rawVercelUrl = `${currentDomain}/?token=${payload}`;
+            // Uses hash fragment (#token=) so scrapers cannot see it in requests
+            const rawVercelUrl = `${currentDomain}/#token=${payload}`;
             
             const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(rawVercelUrl)}`;
             
@@ -209,7 +197,7 @@
             document.getElementById('link-title').value = '';
             document.getElementById('tg-link').value = '';
             renderLinks();
-            alert('Protected Link successfully generated & saved!');
+            alert('Fully Protected Hash Link generated & saved!');
         }
 
         function renderLinks() {
