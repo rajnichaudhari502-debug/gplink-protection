@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Verification Portal</title>
+    <title>Secure File Gateway</title>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,7 +31,7 @@
 
     <div id="user-view" class="card">
         <h2>Preparing Your File...</h2>
-        <div id="status-msg" class="status-box">Checking browser security environment...</div>
+        <div id="status-msg" class="status-box">Verifying browser session security...</div>
         
         <div class="cf-wrapper" id="turnstile-container"></div>
         
@@ -43,7 +43,7 @@
 
     <div id="admin-view" class="card hidden" style="max-width: 750px;">
         <h2>Advanced Link Dashboard</h2>
-        <p>Manage, generate, edit, and revoke your protected file links.</p>
+        <p>Generate, manage, edit, and revoke protected file links.</p>
         
         <div id="login-box">
             <input type="password" id="admin-pass" placeholder="Enter Admin Password">
@@ -51,9 +51,9 @@
         </div>
 
         <div id="generator-box" class="hidden">
-            <input type="text" id="link-title" placeholder="File Name / Description (e.g. Episode 1)">
+            <input type="text" id="link-title" placeholder="File Name / Show Title (e.g. Pushpa 2 1080p)">
             <input type="text" id="tg-link" placeholder="Paste Telegram Bot Link (e.g. https://t.me/Bot?start=xyz)">
-            <button class="btn admin-btn" onclick="generateAndSaveLink()">Generate & Save Link</button>
+            <button class="btn admin-btn" onclick="generateAndSaveLink()">Generate & Save Protected Link</button>
             
             <h3 style="margin-top:25px; color:#f8fafc; font-size:1.1rem; text-align:left;">Managed Links Database</h3>
             <div style="max-height: 300px; overflow-y: auto;">
@@ -78,6 +78,19 @@
         const BOT_USERNAME = "Atoz_12_FileStore_Bot";   
         const SITE_KEY = "0x4AAAAAAFZbC01RvFSGeu7w"; 
 
+        // Simple obfuscation cipher to hide payload from basic text scrapers
+        function encodePayload(str) {
+            return btoa(str).replace(/\=/g, '').split('').reverse().join('');
+        }
+
+        function decodePayload(str) {
+            try {
+                let rev = str.split('').reverse().join('');
+                while (rev.length % 4) rev += '=';
+                return atob(rev);
+            } catch(e) { return null; }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             if (window.location.hash.includes('admin') || window.location.pathname.includes('admin')) {
                 document.getElementById('user-view').classList.add('hidden');
@@ -88,21 +101,36 @@
         });
 
         function initUserFlow() {
-            // Read token from hidden hash fragment (#token=XYZ) instead of query parameters
-            const hashVal = window.location.hash.substring(1); // remove #
-            const params = new URLSearchParams(hashVal);
-            const token = params.get('token');
+            // Read encrypted payload from hash fragment (#/v/ENCODED_STRING)
+            const rawHash = window.location.hash;
+            let encToken = "";
 
-            if (!token) {
-                document.getElementById('status-msg').innerHTML = "Error: Invalid or missing secure token.";
+            if (rawHash.includes('#/v/')) {
+                encToken = rawHash.split('#/v/')[1];
+            } else if (rawHash.includes('#token=')) {
+                encToken = rawHash.split('#token=')[1];
+            }
+
+            if (!encToken) {
+                document.getElementById('status-msg').innerHTML = "❌ <b>Error:</b> Invalid link format or missing security token.";
                 return;
             }
 
-            sessionStorage.setItem('secure_target', token);
-            window.location.hash = ''; // Clear hash from browser bar instantly
+            // Decrypt real payload
+            const realPayload = decodePayload(encToken) || encToken;
+
+            // Check if token was burned locally
+            const burned = JSON.parse(localStorage.getItem('burned_tokens') || '[]');
+            if (burned.includes(realPayload)) {
+                document.getElementById('status-msg').innerHTML = "❌ <b>Link Expired!</b> This link has already been opened and consumed.";
+                return;
+            }
+
+            sessionStorage.setItem('secure_target', realPayload);
+            window.location.hash = ''; // Clear hash instantly from address bar
 
             setTimeout(() => {
-                document.getElementById('status-msg').innerText = "Please complete the human check below:";
+                document.getElementById('status-msg').innerText = "Please complete the human verification check below:";
                 renderTurnstile();
             }, 800);
         }
@@ -124,15 +152,23 @@
         function verifySolvedState(cfToken) {
             if (!cfToken) return;
 
+            const fileCode = sessionStorage.getItem('secure_target');
+            if (!fileCode) return;
+
+            // Burn the token locally upon verification
+            let burned = JSON.parse(localStorage.getItem('burned_tokens') || '[]');
+            burned.push(fileCode);
+            localStorage.setItem('burned_tokens', JSON.stringify(burned));
+
             document.getElementById('turnstile-container').classList.add('hidden');
             document.getElementById('status-msg').classList.add('hidden');
             document.getElementById('action-area').classList.remove('hidden');
 
-            const fileCode = sessionStorage.getItem('secure_target');
             const tgDeepLink = `tg://resolve?domain=${BOT_USERNAME}&start=${fileCode}`;
-            
             const btn = document.getElementById('tg-btn');
             btn.href = tgDeepLink;
+            
+            // Auto-trigger direct open into Telegram
             window.location.href = tgDeepLink;
         }
 
@@ -156,7 +192,7 @@
         }
 
         async function generateAndSaveLink() {
-            const title = document.getElementById('link-title').value.trim() || "Untitled File";
+            const title = document.getElementById('link-title').value.trim() || "Untitled Show";
             const rawTgLink = document.getElementById('tg-link').value.trim();
             
             let payload = "";
@@ -173,9 +209,11 @@
                 return;
             }
 
+            const encToken = encodePayload(payload);
             const currentDomain = window.location.origin;
-            // Uses hash fragment (#token=) so scrapers cannot see it in requests
-            const rawVercelUrl = `${currentDomain}/#token=${payload}`;
+            
+            // Uses Double-Hash cipher URL format (#/v/ENCODED)
+            const rawVercelUrl = `${currentDomain}/#/v/${encToken}`;
             
             const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(rawVercelUrl)}`;
             
@@ -197,7 +235,7 @@
             document.getElementById('link-title').value = '';
             document.getElementById('tg-link').value = '';
             renderLinks();
-            alert('Fully Protected Hash Link generated & saved!');
+            alert('Protected Encrypted Hash Link generated & saved!');
         }
 
         function renderLinks() {
@@ -233,7 +271,7 @@
 
         function editLink(payload) {
             const db = getDatabase();
-            const newTitle = prompt("Edit File Name / Description:", db[payload].title);
+            const newTitle = prompt("Edit Show Title:", db[payload].title);
             if (newTitle !== null) {
                 db[payload].title = newTitle;
                 saveDatabase(db);
