@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secure File Gateway & Dashboard</title>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <!-- Explicitly load Turnstile API with render=explicit -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; color: #f8fafc; padding: 20px; }
@@ -12,7 +13,7 @@
         h2 { margin-bottom: 10px; font-size: 1.5rem; color: #38bdf8; }
         p { margin-bottom: 20px; font-size: 0.95rem; color: #94a3b8; line-height: 1.4; }
         input { width: 100%; padding: 12px; margin-bottom: 15px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 8px; font-size: 0.95rem; }
-        .cf-wrapper { display: flex; justify-content: center; margin-bottom: 20px; }
+        .cf-wrapper { display: flex; justify-content: center; margin-bottom: 20px; min-height: 65px; }
         .btn { width: 100%; padding: 12px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); transition: background 0.2s; margin-top: 5px; }
         .btn:hover { background: #16a34a; }
         .admin-btn { background: #3b82f6; }
@@ -33,9 +34,7 @@
         <h2>Human Check</h2>
         <p>Please complete the verification below to launch Telegram and retrieve your file.</p>
         
-        <div class="cf-wrapper">
-            <div class="cf-turnstile" data-sitekey="0x4AAAAAAZbc01RvFSGeu7w" data-callback="onSuccess"></div>
-        </div>
+        <div class="cf-wrapper" id="turnstile-container"></div>
         
         <a id="tg-btn" class="btn" style="display:none;" href="#">Open Telegram App</a>
     </div>
@@ -64,17 +63,19 @@
                             <th>Links</th>
                             <th>Actions</th>
                         </tr>
-                    <thead id="link-list">
                     </thead>
+                    <tbody id="link-list">
+                    </tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script>
-        const ADMIN_PASSWORD = "wtfnxfx"; // <-- Change your password here
-        const GPLINKS_API_KEY = "cc346941b13df1daa7da298d55231228fa92b359";   // <-- Put your GPLinks API key here
-        const BOT_USERNAME = "Atoz_12_FileStore_Bot";   // <-- Put your Clone Bot Username
+        const ADMIN_PASSWORD = "wtfnxfx"; 
+        const GPLINKS_API_KEY = "cc346941b13df1daa7da298d55231228fa92b359";   
+        const BOT_USERNAME = "Atoz_12_FileStore_Bot";   
+        const SITE_KEY = "0x4AAAAAAZbc01RvFSGeu7w"; // <-- Ensure your Turnstile Site Key is here
 
         window.addEventListener('DOMContentLoaded', () => {
             if (window.location.hash === '#admin' || window.location.pathname.includes('admin')) {
@@ -82,8 +83,24 @@
                 document.getElementById('admin-view').classList.remove('hidden');
             } else {
                 loadUserTarget();
+                renderTurnstile();
             }
         });
+
+        function renderTurnstile() {
+            // Safely render Turnstile programmatically to prevent loading glitches
+            const checkInterval = setInterval(() => {
+                if (window.turnstile) {
+                    clearInterval(checkInterval);
+                    window.turnstile.render('#turnstile-container', {
+                        sitekey: SITE_KEY,
+                        callback: function(token) {
+                            onSuccess(token);
+                        },
+                    });
+                }
+            }, 100);
+        }
 
         function verifyAdmin() {
             const pass = document.getElementById('admin-pass').value;
@@ -96,7 +113,6 @@
             }
         }
 
-        // Database Management using LocalStorage
         function getDatabase() {
             return JSON.parse(localStorage.getItem('gplink_db') || '{}');
         }
@@ -126,10 +142,9 @@
             const currentDomain = window.location.origin;
             const rawVercelUrl = `${currentDomain}/?get=${payload}`;
             
-            // Auto-generate GPLink via API
             const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(rawVercelUrl)}`;
             
-            let finalGPLink = rawVercelUrl; // Fallback if API fails
+            let finalGPLink = rawVercelUrl; 
             try {
                 const response = await fetch(apiEndpoint);
                 const data = await response.json();
@@ -140,7 +155,6 @@
                 console.log("GPLinks API warning, saved raw link.");
             }
 
-            // Save to database mapping payload -> {title, rawVercelUrl, finalGPLink}
             const db = getDatabase();
             db[payload] = { title, rawVercelUrl, finalGPLink };
             saveDatabase(db);
@@ -174,7 +188,7 @@
         }
 
         function revokeLink(payload) {
-            if (confirm("Are you sure you want to revoke/delete this link? It will stop working for users.")) {
+            if (confirm("Are you sure you want to revoke/delete this link?")) {
                 const db = getDatabase();
                 delete db[payload];
                 saveDatabase(db);
@@ -196,15 +210,7 @@
             const urlParams = new URLSearchParams(window.location.search);
             const fileCode = urlParams.get('get');
             if (!fileCode) return;
-
-            // Check if payload exists in our local database
-            const db = getDatabase();
-            if(db[fileCode]) {
-                window.targetPayload = fileCode;
-            } else {
-                // Fallback direct mode if opened directly
-                window.targetPayload = fileCode;
-            }
+            window.targetPayload = fileCode;
         }
 
         function onSuccess(token) {
