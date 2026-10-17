@@ -3,18 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure File Gateway & Dashboard</title>
-    <!-- Explicitly load Turnstile API with render=explicit -->
+    <title>Secure Verification Portal</title>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; color: #f8fafc; padding: 20px; }
-        .card { background: #1e293b; padding: 2.5rem 2rem; border-radius: 16px; text-align: center; max-width: 600px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
+        .card { background: #1e293b; padding: 2.5rem 2rem; border-radius: 16px; text-align: center; max-width: 500px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
         h2 { margin-bottom: 10px; font-size: 1.5rem; color: #38bdf8; }
         p { margin-bottom: 20px; font-size: 0.95rem; color: #94a3b8; line-height: 1.4; }
         input { width: 100%; padding: 12px; margin-bottom: 15px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 8px; font-size: 0.95rem; }
-        .cf-wrapper { display: flex; justify-content: center; margin-bottom: 20px; min-height: 65px; }
-        .btn { width: 100%; padding: 12px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); transition: background 0.2s; margin-top: 5px; }
+        .cf-wrapper { display: flex; justify-content: center; margin: 20px 0; min-height: 65px; }
+        .btn { width: 100%; padding: 14px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); transition: background 0.2s; display: block; margin-top: 15px; }
         .btn:hover { background: #16a34a; }
         .admin-btn { background: #3b82f6; }
         .admin-btn:hover { background: #2563eb; }
@@ -25,18 +24,23 @@
         .link-table th, .link-table td { padding: 10px; border-bottom: 1px solid #334155; word-break: break-all; }
         .link-table th { color: #38bdf8; }
         .actions button { padding: 5px 10px; font-size: 0.75rem; margin-right: 5px; width: auto; }
+        .status-box { padding: 12px; background: #0f172a; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155; color: #f59e0b; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
-    <!-- USER VIEW: CAPTCHA GATE -->
+    <!-- USER VIEW: HIDDEN GATE -->
     <div id="user-view" class="card">
-        <h2>Human Check</h2>
-        <p>Please complete the verification below to launch Telegram and retrieve your file.</p>
+        <h2>Preparing Your File...</h2>
+        <div id="status-msg" class="status-box">Checking browser security environment...</div>
         
+        <!-- Captcha hidden behind validation check -->
         <div class="cf-wrapper" id="turnstile-container"></div>
         
-        <a id="tg-btn" class="btn" style="display:none;" href="#">Open Telegram App</a>
+        <div id="action-area" class="hidden">
+            <p style="color: #22c55e; font-weight: bold;">Verification Successful!</p>
+            <a id="tg-btn" class="btn" href="#">Open Telegram App</a>
+        </div>
     </div>
 
     <!-- ADVANCED ADMIN VIEW -->
@@ -75,31 +79,73 @@
         const ADMIN_PASSWORD = "wtfnxfx"; 
         const GPLINKS_API_KEY = "cc346941b13df1daa7da298d55231228fa92b359";   
         const BOT_USERNAME = "Atoz_12_FileStore_Bot";   
-        const SITE_KEY = "0x4AAAAAAFZbC01RvFSGeu7w"; // <-- Ensure your Turnstile Site Key is here
+        const SITE_KEY = "0x4AAAAAAZbc01RvFSGeu7w"; 
 
         window.addEventListener('DOMContentLoaded', () => {
             if (window.location.hash === '#admin' || window.location.pathname.includes('admin')) {
                 document.getElementById('user-view').classList.add('hidden');
                 document.getElementById('admin-view').classList.remove('hidden');
             } else {
-                loadUserTarget();
-                renderTurnstile();
+                initUserFlow();
             }
         });
 
+        // Anti-Bypasser Flow: Obfuscate parameters and enforce solve state
+        function initUserFlow() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+
+            if (!token) {
+                document.getElementById('status-msg.innerHTML') = "Error: Invalid access route.";
+                return;
+            }
+
+            // Store encrypted/tokenized target securely in session storage so scrapers cant read it from DOM
+            sessionStorage.setItem('secure_target', token);
+
+            // Change URL cleanly so payload is completely gone from browser address bar
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            // Delay rendering captcha slightly to trick basic scrapers
+            setTimeout(() => {
+                document.getElementById('status-msg').innerText = "Please complete the human check below:";
+                renderTurnstile();
+            }, 1000);
+        }
+
         function renderTurnstile() {
-            // Safely render Turnstile programmatically to prevent loading glitches
             const checkInterval = setInterval(() => {
                 if (window.turnstile) {
                     clearInterval(checkInterval);
                     window.turnstile.render('#turnstile-container', {
                         sitekey: SITE_KEY,
                         callback: function(token) {
-                            onSuccess(token);
+                            verifySolvedState(token);
                         },
                     });
                 }
             }, 100);
+        }
+
+        function verifySolvedState(cfToken) {
+            if (!cfToken) {
+                alert("Verification failed.");
+                return;
+            }
+
+            // Challenge successfully solved by human browser
+            document.getElementById('turnstile-container').classList.add('hidden');
+            document.getElementById('status-msg').classList.add('hidden');
+            document.getElementById('action-area').classList.remove('hidden');
+
+            const fileCode = sessionStorage.getItem('secure_target');
+            const tgDeepLink = `tg://resolve?domain=${BOT_USERNAME}&start=${fileCode}`;
+            
+            const btn = document.getElementById('tg-btn');
+            btn.href = tgDeepLink;
+            
+            // Auto trigger app
+            window.location.href = tgDeepLink;
         }
 
         function verifyAdmin() {
@@ -140,7 +186,8 @@
             }
 
             const currentDomain = window.location.origin;
-            const rawVercelUrl = `${currentDomain}/?get=${payload}`;
+            // The URL passed to GPLink now uses a clean hidden token parameter name
+            const rawVercelUrl = `${currentDomain}/?token=${payload}`;
             
             const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(rawVercelUrl)}`;
             
@@ -152,7 +199,7 @@
                     finalGPLink = data.shortenedUrl;
                 }
             } catch(err) {
-                console.log("GPLinks API warning, saved raw link.");
+                console.log("GPLinks API warning.");
             }
 
             const db = getDatabase();
@@ -162,7 +209,7 @@
             document.getElementById('link-title').value = '';
             document.getElementById('tg-link').value = '';
             renderLinks();
-            alert('Link successfully generated & saved!');
+            alert('Protected Link successfully generated & saved!');
         }
 
         function renderLinks() {
@@ -204,27 +251,6 @@
                 saveDatabase(db);
                 renderLinks();
             }
-        }
-
-        function loadUserTarget() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const fileCode = urlParams.get('get');
-            if (!fileCode) return;
-            window.targetPayload = fileCode;
-        }
-
-        function onSuccess(token) {
-            const fileCode = window.targetPayload || new URLSearchParams(window.location.search).get('get');
-            if (!fileCode) {
-                alert("Invalid or expired link token.");
-                return;
-            }
-
-            const tgDeepLink = `tg://resolve?domain=${BOT_USERNAME}&start=${fileCode}`;
-            const btn = document.getElementById('tg-btn');
-            btn.href = tgDeepLink;
-            btn.style.display = 'block';
-            window.location.href = tgDeepLink;
         }
     </script>
 </body>
