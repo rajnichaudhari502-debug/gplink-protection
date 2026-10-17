@@ -3,22 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure File Gateway</title>
+    <title>Secure File Gateway & Dashboard</title>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; color: #f8fafc; padding: 20px; }
-        .card { background: #1e293b; padding: 2.5rem 2rem; border-radius: 16px; text-align: center; max-width: 450px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
+        .card { background: #1e293b; padding: 2.5rem 2rem; border-radius: 16px; text-align: center; max-width: 600px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
         h2 { margin-bottom: 10px; font-size: 1.5rem; color: #38bdf8; }
         p { margin-bottom: 20px; font-size: 0.95rem; color: #94a3b8; line-height: 1.4; }
         input { width: 100%; padding: 12px; margin-bottom: 15px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 8px; font-size: 0.95rem; }
         .cf-wrapper { display: flex; justify-content: center; margin-bottom: 20px; }
-        .btn { display: none; width: 100%; padding: 14px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); transition: background 0.2s; }
+        .btn { width: 100%; padding: 12px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); transition: background 0.2s; margin-top: 5px; }
         .btn:hover { background: #16a34a; }
-        .admin-btn { background: #3b82f6; display: block; margin-top: 10px; }
+        .admin-btn { background: #3b82f6; }
         .admin-btn:hover { background: #2563eb; }
+        .danger-btn { background: #ef4444; }
+        .danger-btn:hover { background: #dc2626; }
         .hidden { display: none !important; }
-        .result-box { background: #0f172a; padding: 10px; border-radius: 6px; word-break: break-all; font-size: 0.85rem; color: #38bdf8; margin-top: 10px; border: 1px dashed #475569; }
+        .link-table { width: 100%; margin-top: 20px; text-align: left; border-collapse: collapse; font-size: 0.85rem; }
+        .link-table th, .link-table td { padding: 10px; border-bottom: 1px solid #334155; word-break: break-all; }
+        .link-table th { color: #38bdf8; }
+        .actions button { padding: 5px 10px; font-size: 0.75rem; margin-right: 5px; width: auto; }
     </style>
 </head>
 <body>
@@ -29,40 +34,54 @@
         <p>Please complete the verification below to launch Telegram and retrieve your file.</p>
         
         <div class="cf-wrapper">
-            <!-- PASTE YOUR CLOUDFLARE SITE KEY HERE -->
-            <div class="cf-turnstile" data-sitekey="0x4AAAAAAFZbC01RvFSGeu7w" data-callback="onSuccess"></div>
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAAZbc01RvFSGeu7w" data-callback="onSuccess"></div>
         </div>
         
-        <a id="tg-btn" class="btn" href="#">Open Telegram App</a>
+        <a id="tg-btn" class="btn" style="display:none;" href="#">Open Telegram App</a>
     </div>
 
-    <!-- ADMIN VIEW: ACCESSED VIA /admin or #admin -->
-    <div id="admin-view" class="card hidden">
-        <h2>Admin Link Generator</h2>
-        <p>Generate protected GPLinks instantly.</p>
+    <!-- ADVANCED ADMIN VIEW -->
+    <div id="admin-view" class="card hidden" style="max-width: 750px;">
+        <h2>Advanced Link Dashboard</h2>
+        <p>Manage, generate, edit, and revoke your protected file links.</p>
         
         <div id="login-box">
             <input type="password" id="admin-pass" placeholder="Enter Admin Password">
-            <button class="btn admin-btn" style="display:block;" onclick="verifyAdmin()">Login</button>
+            <button class="btn admin-btn" onclick="verifyAdmin()">Login</button>
         </div>
 
         <div id="generator-box" class="hidden">
-            <input type="text" id="tg-link" placeholder="Paste Telegram Bot Link (e.g., https://t.me/Bot?start=xyz)">
-            <button class="btn admin-btn" style="display:block;" onclick="generateGPLink()">Generate Secure GPLink</button>
-            <div id="output" class="result-box hidden"></div>
+            <input type="text" id="link-title" placeholder="File Name / Description (e.g. Episode 1)">
+            <input type="text" id="tg-link" placeholder="Paste Telegram Bot Link (e.g. https://t.me/Bot?start=xyz)">
+            <button class="btn admin-btn" onclick="generateAndSaveLink()">Generate & Save Link</button>
+            
+            <h3 style="margin-top:25px; color:#f8fafc; font-size:1.1rem; text-align:left;">Managed Links Database</h3>
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table class="link-table">
+                    <thead>
+                        <tr>
+                            <th>Title / Payload</th>
+                            <th>Links</th>
+                            <th>Actions</th>
+                        </tr>
+                    <thead id="link-list">
+                    </thead>
+                </table>
+            </div>
         </div>
     </div>
 
     <script>
-        const ADMIN_PASSWORD = "123gplinksecured"; // <-- Change to your admin password
-        const GPLINKS_API_KEY = "cc346941b13df1daa7da298d55231228fa92b359";   // <-- Put your GPLinks API Key here
-        const BOT_USERNAME = "@Atoz_12_FileStore_Bot";   // <-- Put your Public Clone Bot username (without @)
+        const ADMIN_PASSWORD = "wtfnxfx"; // <-- Change your password here
+        const GPLINKS_API_KEY = " cc346941b13df1daa7da298d55231228fa92b359";   // <-- Put your GPLinks API key here
+        const BOT_USERNAME = "Atoz_12_FileStore_Bot";   // <-- Put your Clone Bot Username
 
-        // Detects if you open /admin or #admin
         window.addEventListener('DOMContentLoaded', () => {
             if (window.location.hash === '#admin' || window.location.pathname.includes('admin')) {
                 document.getElementById('user-view').classList.add('hidden');
                 document.getElementById('admin-view').classList.remove('hidden');
+            } else {
+                loadUserTarget();
             }
         });
 
@@ -71,60 +90,127 @@
             if (pass === ADMIN_PASSWORD) {
                 document.getElementById('login-box').classList.add('hidden');
                 document.getElementById('generator-box').classList.remove('hidden');
+                renderLinks();
             } else {
                 alert('Incorrect Password!');
             }
         }
 
-        async function generateGPLink() {
-            const rawTgLink = document.getElementById('tg-link').value.trim();
-            if (!rawTgLink) {
-                alert('Please paste a valid Telegram link!');
-                return;
-            }
+        // Database Management using LocalStorage
+        function getDatabase() {
+            return JSON.parse(localStorage.getItem('gplink_db') || '{}');
+        }
 
+        function saveDatabase(db) {
+            localStorage.setItem('gplink_db', JSON.stringify(db));
+        }
+
+        async function generateAndSaveLink() {
+            const title = document.getElementById('link-title').value.trim() || "Untitled File";
+            const rawTgLink = document.getElementById('tg-link').value.trim();
+            
             let payload = "";
             try {
                 const urlObj = new URL(rawTgLink);
                 payload = urlObj.searchParams.get("start") || "";
             } catch (e) {
-                alert('Invalid URL format!');
+                alert('Invalid Telegram Link format!');
                 return;
             }
 
             if (!payload) {
-                alert('The Telegram link must contain a ?start= parameter!');
+                alert('Link must contain a ?start= payload!');
                 return;
             }
 
             const currentDomain = window.location.origin;
-            const gatewayUrl = `${currentDomain}/?get=${payload}`;
-            const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(gatewayUrl)}`;
-
-            const outputDiv = document.getElementById('output');
-            outputDiv.classList.remove('hidden');
-            outputDiv.innerHTML = "Generating secure GPLink...";
-
+            const rawVercelUrl = `${currentDomain}/?get=${payload}`;
+            
+            // Auto-generate GPLink via API
+            const apiEndpoint = `https://gplinks.com/api?api=${GPLINKS_API_KEY}&url=${encodeURIComponent(rawVercelUrl)}`;
+            
+            let finalGPLink = rawVercelUrl; // Fallback if API fails
             try {
                 const response = await fetch(apiEndpoint);
                 const data = await response.json();
-                
                 if (data.status === "success" && data.shortenedUrl) {
-                    outputDiv.innerHTML = `<b>Success! Copy your GPLink:</b><br><a href="${data.shortenedUrl}" target="_blank" style="color:#22c55e;">${data.shortenedUrl}</a>`;
-                } else {
-                    outputDiv.innerHTML = `API Error: ${data.message || 'Could not generate link. Check API Key.'}`;
+                    finalGPLink = data.shortenedUrl;
                 }
-            } catch (err) {
-                outputDiv.innerHTML = `Network error. Check console or API settings.`;
+            } catch(err) {
+                console.log("GPLinks API warning, saved raw link.");
+            }
+
+            // Save to database mapping payload -> {title, rawVercelUrl, finalGPLink}
+            const db = getDatabase();
+            db[payload] = { title, rawVercelUrl, finalGPLink };
+            saveDatabase(db);
+
+            document.getElementById('link-title').value = '';
+            document.getElementById('tg-link').value = '';
+            renderLinks();
+            alert('Link successfully generated & saved!');
+        }
+
+        function renderLinks() {
+            const db = getDatabase();
+            const listEl = document.getElementById('link-list');
+            listEl.innerHTML = '';
+
+            for (const [payload, data] of Object.entries(db)) {
+                listEl.innerHTML += `
+                    <tr>
+                        <td><b>${data.title}</b><br><span style="color:#94a3b8; font-size:0.75rem;">Payload: ${payload}</span></td>
+                        <td>
+                            <a href="${data.rawVercelUrl}" target="_blank" style="color:#38bdf8;">Raw Vercel Link</a><br>
+                            <a href="${data.finalGPLink}" target="_blank" style="color:#22c55e;">GPLink</a>
+                        </td>
+                        <td class="actions">
+                            <button class="btn admin-btn" onclick="editLink('${payload}')">Edit</button>
+                            <button class="btn danger-btn" onclick="revokeLink('${payload}')">Revoke</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        function revokeLink(payload) {
+            if (confirm("Are you sure you want to revoke/delete this link? It will stop working for users.")) {
+                const db = getDatabase();
+                delete db[payload];
+                saveDatabase(db);
+                renderLinks();
+            }
+        }
+
+        function editLink(payload) {
+            const db = getDatabase();
+            const newTitle = prompt("Edit File Name / Description:", db[payload].title);
+            if (newTitle !== null) {
+                db[payload].title = newTitle;
+                saveDatabase(db);
+                renderLinks();
+            }
+        }
+
+        function loadUserTarget() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileCode = urlParams.get('get');
+            if (!fileCode) return;
+
+            // Check if payload exists in our local database
+            const db = getDatabase();
+            if(db[fileCode]) {
+                window.targetPayload = fileCode;
+            } else {
+                // Fallback direct mode if opened directly
+                window.targetPayload = fileCode;
             }
         }
 
         function onSuccess(token) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const fileCode = urlParams.get('get') || '';
-
+            const fileCode = window.targetPayload || new URLSearchParams(window.location.search).get('get');
             if (!fileCode) {
-                alert("No file payload found in link.");
+                alert("Invalid or expired link token.");
                 return;
             }
 
@@ -132,7 +218,6 @@
             const btn = document.getElementById('tg-btn');
             btn.href = tgDeepLink;
             btn.style.display = 'block';
-            
             window.location.href = tgDeepLink;
         }
     </script>
